@@ -2850,6 +2850,18 @@ class Scheduler:
             distributed_autotune.schedule(self)
             self.compute_ancestors()
 
+        from torch._inductor.x_dump_graph_jsonl import dump_jsonl_graph
+        dump_jsonl_graph(self.nodes, self)
+
+        from torch._inductor.x_dump_graph_adj import dump_adj_graph
+        dump_adj_graph(self.nodes, self)
+
+        from torch._inductor.x_dump_graph_raw import dump_raw_graph
+        dump_raw_graph(self.nodes, self)
+
+        from torch._inductor.x_dump_graph_json import dump_json_graph
+        dump_json_graph(self.nodes, self)
+
         self.nodes = self.fuse_nodes(self.nodes)
         if config._post_fusion_custom_pass is not None:
             self.nodes = config._post_fusion_custom_pass(self.nodes)
