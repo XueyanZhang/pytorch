@@ -2863,6 +2863,10 @@ class Scheduler:
         dump_json_graph(self.nodes, self)
 
         self.nodes = self.fuse_nodes(self.nodes)
+
+        from torch._inductor.x_dump_fusion_result import dump_fusion_result
+        dump_fusion_result(self.nodes, self)
+
         if config._post_fusion_custom_pass is not None:
             self.nodes = config._post_fusion_custom_pass(self.nodes)
 
