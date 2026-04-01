@@ -7,11 +7,9 @@ default heuristic-driven fusion pass.
 
 Env vars:
   X_LLM_FUSION          — set to "1" to enable (default: off)
-  X_LLM_FUSION_FILE     — path to the JSON file with fusion groups
   X_LLM_FUSION_LEGALITY_ONLY — "1" (default) skip heuristics; "0" use full can_fuse
 """
 
-import json
 import logging
 import os
 
@@ -23,16 +21,6 @@ fusion_log = logging.getLogger("torch._inductor.fusion")
 # ═══════════════════════════════════════════════════════════════════════
 #  JSON loading and validation
 # ═══════════════════════════════════════════════════════════════════════
-
-
-def _load_fusion_groups(path: str) -> list[dict]:
-    """Read JSON file and return the fusion_groups list."""
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
-    groups = data.get("fusion_groups")
-    if groups is None:
-        raise ValueError(f"JSON file {path} missing 'fusion_groups' key")
-    return groups
 
 
 def _validate_groups(groups: list[dict], num_nodes: int) -> list[dict]:
@@ -360,29 +348,20 @@ def _fuse_group(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def apply_llm_fusion(scheduler, nodes: list) -> list:
+def apply_llm_fusion(scheduler, nodes: list, groups: list[dict]) -> list:
     """
     Apply LLM-guided fusion decisions to the scheduler node list.
-    Replaces the default fuse_nodes() when X_LLM_FUSION=1.
-    """
-    fusion_file = os.environ.get("X_LLM_FUSION_FILE", "")
-    if not fusion_file:
-        raise FileNotFoundError(
-            "X_LLM_FUSION=1 but X_LLM_FUSION_FILE not set. "
-            "Provide the path to the LLM fusion result JSON."
-        )
-    if not os.path.isfile(fusion_file):
-        raise FileNotFoundError(f"LLM fusion file not found: {fusion_file}")
 
+    Args:
+        groups: fusion groups to apply.
+    """
     legality_only = os.environ.get("X_LLM_FUSION_LEGALITY_ONLY", "1") != "0"
 
-    # Load and validate
-    groups = _load_fusion_groups(fusion_file)
     groups = _validate_groups(groups, len(nodes))
 
     if not groups:
         fusion_log.debug("===== llm fusion: no valid groups to apply =====")
-        print("[x_llm_fusion] No valid fusion groups to apply")
+        fusion_log.info("No valid fusion groups to apply")
         return nodes
 
     mode = "legality-only" if legality_only else "full can_fuse"
@@ -430,9 +409,9 @@ def apply_llm_fusion(scheduler, nodes: list) -> list:
         "%d nodes fused (%d -> %d) =====",
         applied, total, skipped, total_fused, len(nodes), len(result),
     )
-    print(
-        f"[x_llm_fusion] Applied {applied}/{total} groups, {skipped} skipped "
-        f"({total_fused} nodes fused, {len(nodes)} -> {len(result)})"
+    fusion_log.info(
+        "Applied %d/%d groups, %d skipped (%d nodes fused, %d -> %d)",
+        applied, total, skipped, total_fused, len(nodes), len(result),
     )
 
     return result
