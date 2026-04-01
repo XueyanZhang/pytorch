@@ -2850,22 +2850,28 @@ class Scheduler:
             distributed_autotune.schedule(self)
             self.compute_ancestors()
 
-        from torch._inductor.x_dump_graph_jsonl import dump_jsonl_graph
-        dump_jsonl_graph(self.nodes, self)
+        if os.environ.get("X_DUMP_GRAPH") == "1":
+            from torch._inductor.x_dump_graph_jsonl import dump_jsonl_graph
+            dump_jsonl_graph(self.nodes, self)
 
-        from torch._inductor.x_dump_graph_adj import dump_adj_graph
-        dump_adj_graph(self.nodes, self)
+            from torch._inductor.x_dump_graph_adj import dump_adj_graph
+            dump_adj_graph(self.nodes, self)
 
-        from torch._inductor.x_dump_graph_raw import dump_raw_graph
-        dump_raw_graph(self.nodes, self)
+            from torch._inductor.x_dump_graph_raw import dump_raw_graph
+            dump_raw_graph(self.nodes, self)
 
-        from torch._inductor.x_dump_graph_json import dump_json_graph
-        dump_json_graph(self.nodes, self)
+            from torch._inductor.x_dump_graph_json import dump_json_graph
+            dump_json_graph(self.nodes, self)
 
+        if os.environ.get("X_LLM_FUSION") == "1":
+            from torch._inductor.x_llm_fusion import apply_llm_fusion
+            self.nodes = apply_llm_fusion(self, self.nodes)
+        
         self.nodes = self.fuse_nodes(self.nodes)
 
-        from torch._inductor.x_dump_fusion_result import dump_fusion_result
-        dump_fusion_result(self.nodes, self)
+        if os.environ.get("X_DUMP_RESULT") == "1":
+            from torch._inductor.x_dump_fusion_result import dump_fusion_result
+            dump_fusion_result(self.nodes, self)
 
         if config._post_fusion_custom_pass is not None:
             self.nodes = config._post_fusion_custom_pass(self.nodes)
