@@ -2,12 +2,14 @@
 LLM-based fusion reasoning (Step 2 of the LLM fusion pipeline).
 
 Takes the pre-fusion scheduler nodes, builds a graph text representation,
-sends it to Claude for fusion analysis, and writes a JSON file that
+sends it to an LLM for fusion analysis, and writes a JSON file that
 x_llm_fusion.py (Step 3) can consume.
 
 Env vars:
   X_LLM_REASON_FUSION   — set to "1" to enable (default: off)
-  X_LLM_REASON_MODEL    — Claude model (default: claude-sonnet-4-6)
+  X_LLM_BACKEND         — LLM backend "provider:model" (default: claude:claude-sonnet-4-6)
+                            See x_llm_backend/__init__.py for supported providers.
+  X_LLM_REASON_MODEL    — DEPRECATED, use X_LLM_BACKEND instead
   X_LLM_REASON_FORMAT   — graph format: "adj" or "jsonl" (default: adj)
   X_LLM_REASON_DUMP_DIR — dump response & groups for debug (default: off)
   X_LLM_REASON_STRATEGY — prompt strategy: "direct", "pattern", "pairwise" (default: pattern)
@@ -18,7 +20,6 @@ import json
 import logging
 import os
 import re
-import time
 
 reason_log = logging.getLogger("torch._inductor.fusion")
 
@@ -170,41 +171,6 @@ STRATEGIES = {
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  LLM call
-# ═══════════════════════════════════════════════════════════════════════
-
-
-def _call_llm(messages: list[dict], model: str) -> str:
-    """Call Claude API with streaming, return response text."""
-    import anthropic
-
-    client = anthropic.Anthropic()  # uses ANTHROPIC_API_KEY env var
-
-    t0 = time.time()
-    text_parts = []
-    with client.messages.stream(
-        model=model,
-        max_tokens=65536,
-        temperature=0.0,
-        system=SYSTEM_PROMPT,
-        messages=messages,
-    ) as stream:
-        for text_chunk in stream.text_stream:
-            text_parts.append(text_chunk)
-    elapsed = time.time() - t0
-
-    response = stream.get_final_message()
-    text = "".join(text_parts)
-    usage = response.usage
-
-    reason_log.info(
-        "LLM call done: %.1fs, in=%d out=%d, model=%s",
-        elapsed, usage.input_tokens, usage.output_tokens, response.model,
-    )
-    return text
-
-
-# ═══════════════════════════════════════════════════════════════════════
 #  Response parsing
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -311,7 +277,6 @@ def reason_fusion(nodes: list, scheduler) -> list[dict]:
 
     Returns list of fusion group dicts: [{"nodes": [...], "reason": "..."}, ...]
     """
-    model = os.environ.get("X_LLM_REASON_MODEL", "claude-sonnet-4-6")
     fmt = os.environ.get("X_LLM_REASON_FORMAT", "adj")
     strategy = os.environ.get("X_LLM_REASON_STRATEGY", "direct")
 
@@ -320,15 +285,17 @@ def reason_fusion(nodes: list, scheduler) -> list[dict]:
             f"Unknown strategy: {strategy!r}. Use one of: {', '.join(STRATEGIES)}"
         )
 
-    reason_log.info("model=%s format=%s strategy=%s", model, fmt, strategy)
+    reason_log.info("format=%s strategy=%s", fmt, strategy)
 
     # Step 1: Build graph text
     graph_text = _build_graph_text(nodes, scheduler, fmt)
     reason_log.info("graph: %d nodes, %d chars", len(nodes), len(graph_text))
 
     # Step 2: Build prompt and call LLM
+    from torch._inductor.x_llm_backend import call_llm
+
     messages = STRATEGIES[strategy](graph_text, fmt)
-    response_text = _call_llm(messages, model)
+    response_text, _usage = call_llm(SYSTEM_PROMPT, messages)
 
     # Step 3: Parse fusion groups
     groups = _parse_fusion_groups(response_text)
