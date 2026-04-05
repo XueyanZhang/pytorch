@@ -2866,8 +2866,11 @@ class Scheduler:
         if os.environ.get("X_LLM_FUSION") == "1":
             from torch._inductor.x_llm_fusion import apply_llm_fusion
             from torch._inductor.x_llm_reason_fusion import reason_fusion
-            groups = reason_fusion(self.nodes, self)
+            groups, reason_dir = reason_fusion(self.nodes, self)
             self.nodes = apply_llm_fusion(self, self.nodes, groups)
+            if reason_dir:
+                from torch._inductor.x_dump_fusion_result import dump_fusion_result
+                dump_fusion_result(self.nodes, self, out_dir=reason_dir)
         
         self.nodes = self.fuse_nodes(self.nodes)
 

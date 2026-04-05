@@ -7,7 +7,8 @@ Output:
   fusion_result.json
 
 Env vars:
-  X_DUMP_FUSION  — set to "1" to enable (default: off)
+  X_DUMP_RESULT    — set to "1" to enable (default: off)
+  X_DUMP_FUSION_DIR — output base directory (default: xfusion/x_dump_fusion_result)
 """
 
 import itertools
@@ -59,8 +60,9 @@ def _collect_fusion_groups(nodes) -> list[dict]:
 #  Main entry point
 # ═══════════════════════════════════════════════════════════════════════
 
-def dump_fusion_result(nodes, scheduler) -> None:
-    out_dir = _get_output_dir()
+def dump_fusion_result(nodes, scheduler, out_dir: str | None = None) -> None:
+    if out_dir is None:
+        out_dir = _get_output_dir()
 
     groups = _collect_fusion_groups(nodes)
 

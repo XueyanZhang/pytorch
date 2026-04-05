@@ -6,13 +6,12 @@ sends it to an LLM for fusion analysis, and writes a JSON file that
 x_llm_fusion.py (Step 3) can consume.
 
 Env vars:
-  X_LLM_REASON_FUSION   — set to "1" to enable (default: off)
   X_LLM_BACKEND         — LLM backend "provider:model" (default: claude:claude-sonnet-4-6)
                             See x_llm_backend/__init__.py for supported providers.
   X_LLM_REASON_MODEL    — DEPRECATED, use X_LLM_BACKEND instead
   X_LLM_REASON_FORMAT   — graph format: "adj" or "jsonl" (default: adj)
   X_LLM_REASON_DUMP_DIR — dump response & groups for debug (default: off)
-  X_LLM_REASON_STRATEGY — prompt strategy: "direct", "pattern", "pairwise" (default: pattern)
+  X_LLM_REASON_STRATEGY — prompt strategy: "direct", "pattern", "pairwise" (default: direct)
 """
 
 import itertools
@@ -236,11 +235,14 @@ def _parse_fusion_groups(response_text: str) -> list[dict]:
 _dump_counter = itertools.count()
 
 
-def _dump_reason(graph_text: str, fmt: str, response_text: str, groups: list[dict]) -> None:
-    """Dump input graph, LLM response, and parsed groups to disk for debugging."""
+def _dump_reason(graph_text: str, fmt: str, response_text: str, groups: list[dict]) -> str | None:
+    """Dump input graph, LLM response, and parsed groups to disk.
+
+    Returns the allocated dump directory path, or None if dump is disabled.
+    """
     dump_dir = os.environ.get("X_LLM_REASON_DUMP_DIR", "")
     if not dump_dir:
-        return
+        return None
 
     graph_ext = "jsonl" if fmt == "jsonl" else "txt"
 
@@ -260,7 +262,9 @@ def _dump_reason(graph_text: str, fmt: str, response_text: str, groups: list[dic
             json.dump(groups, f, indent=2)
 
         reason_log.info("dumped reason to %s", path)
-        return
+        return path
+
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -268,14 +272,16 @@ def _dump_reason(graph_text: str, fmt: str, response_text: str, groups: list[dic
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def reason_fusion(nodes: list, scheduler) -> list[dict]:
+def reason_fusion(nodes: list, scheduler) -> tuple[list[dict], str | None]:
     """
     Main entry point for LLM fusion reasoning.
 
     Builds a graph representation, sends it to Claude, parses the response,
     and returns the fusion groups in memory.
 
-    Returns list of fusion group dicts: [{"nodes": [...], "reason": "..."}, ...]
+    Returns (groups, dump_dir):
+        groups   — list of fusion group dicts: [{"nodes": [...], "reason": "..."}, ...]
+        dump_dir — path to the reason dump directory, or None if dumping is off
     """
     fmt = os.environ.get("X_LLM_REASON_FORMAT", "adj")
     strategy = os.environ.get("X_LLM_REASON_STRATEGY", "direct")
@@ -301,7 +307,7 @@ def reason_fusion(nodes: list, scheduler) -> list[dict]:
     groups = _parse_fusion_groups(response_text)
     reason_log.info("parsed %d fusion groups", len(groups))
 
-    # Optional: dump for debug
-    _dump_reason(graph_text, fmt, response_text, groups)
+    # Dump reasoning artifacts (graph, response, groups)
+    dump_dir = _dump_reason(graph_text, fmt, response_text, groups)
 
-    return groups
+    return groups, dump_dir
