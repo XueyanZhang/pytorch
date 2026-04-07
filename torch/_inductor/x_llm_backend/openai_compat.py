@@ -1,4 +1,4 @@
-"""OpenAI-compatible backend (works with OpenAI API and vLLM)."""
+"""OpenAI-compatible backend (works with OpenAI, vLLM, Gemini, etc.)."""
 
 import logging
 import os
@@ -14,6 +14,7 @@ def call(
     max_tokens: int = 65536,
     temperature: float = 0.0,
     base_url: str | None = None,
+    api_key: str | None = None,
 ) -> tuple[str, dict]:
     """Call OpenAI-compatible API. Returns (text, usage_dict)."""
     import openai
@@ -21,6 +22,9 @@ def call(
     kwargs: dict = {}
     if base_url:
         kwargs["base_url"] = base_url
+    if api_key:
+        kwargs["api_key"] = api_key
+    elif base_url:
         kwargs["api_key"] = os.environ.get("VLLM_API_KEY", "EMPTY")
 
     client = openai.OpenAI(**kwargs)  # uses OPENAI_API_KEY by default
@@ -31,7 +35,7 @@ def call(
     response = client.chat.completions.create(
         model=model,
         messages=full_messages,
-        max_tokens=max_tokens,
+        max_completion_tokens=max_tokens,
         temperature=temperature,
     )
     elapsed = time.time() - t0

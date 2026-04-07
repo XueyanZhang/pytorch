@@ -6,12 +6,14 @@ Selects backend via X_LLM_BACKEND env var (format: "provider:model").
 Supported providers:
   claude  — Anthropic Claude API (requires anthropic SDK, ANTHROPIC_API_KEY)
   openai  — OpenAI API (requires openai SDK, OPENAI_API_KEY)
+  gemini  — Google Gemini via OpenAI-compatible API (requires openai SDK, GEMINI_API_KEY)
   vllm    — vLLM self-hosted (requires openai SDK, format: vllm:base_url::model)
   hf      — HuggingFace transformers local (requires transformers, torch)
 
 Examples:
   X_LLM_BACKEND=claude:claude-sonnet-4-6
   X_LLM_BACKEND=openai:gpt-4o
+  X_LLM_BACKEND=gemini:gemini-2.5-flash
   X_LLM_BACKEND=vllm:http://localhost:8000/v1::meta-llama/Llama-3-70B
   X_LLM_BACKEND=hf:meta-llama/Llama-3-70B-Instruct
   X_LLM_BACKEND=hf:/path/to/local/model
@@ -68,6 +70,16 @@ def call_llm(
     if provider == "claude":
         from torch._inductor.x_llm_backend.claude import call
         return call(system_prompt, messages, model_str, max_tokens, temperature)
+
+    elif provider == "gemini":
+        from torch._inductor.x_llm_backend.openai_compat import call
+
+        base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        return call(
+            system_prompt, messages, model_str, max_tokens, temperature,
+            base_url=base_url, api_key=api_key,
+        )
 
     elif provider in ("openai", "vllm"):
         from torch._inductor.x_llm_backend.openai_compat import call

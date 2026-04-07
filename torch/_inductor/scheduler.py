@@ -2872,9 +2872,8 @@ class Scheduler:
                 from torch._inductor.x_dump_fusion_result import dump_fusion_result
                 dump_fusion_result(self.nodes, self, out_dir=reason_dir)
         
-        self.nodes = self.fuse_nodes(self.nodes)
-
-        if os.environ.get("X_DUMP_RESULT") == "1":
+        if os.environ.get("X_SKIP_FUSE_NODES") != "1":
+            self.nodes = self.fuse_nodes(self.nodes)
             from torch._inductor.x_dump_fusion_result import dump_fusion_result
             dump_fusion_result(self.nodes, self)
 
