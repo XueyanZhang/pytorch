@@ -6,7 +6,7 @@ Usage:
 
 Env vars:
   X_DUMP_GRAPH         - set to "1" to enable (default: off)
-  X_DUMP_GRAPH_DIR     - output base directory (default: /home/pdd/xyz/fusionr1/xfusion/x_dump_graph_jsonl)
+  X_DUMP_GRAPH_DIR     - output base directory (default: <repo_root>/xfusion/x_dump_graph_jsonl)
 """
 
 import itertools
@@ -15,12 +15,12 @@ import os
 
 _counter = itertools.count()
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+_DEFAULT_DIR = os.path.join(_REPO_ROOT, "xfusion", "x_dump_graph_jsonl")
+
 
 def _get_output_dir() -> str:
-    base = os.environ.get(
-        "X_DUMP_GRAPH_DIR",
-        "/home/pdd/xyz/fusionr1/xfusion/x_dump_graph_jsonl",
-    )
+    base = os.environ.get("X_DUMP_GRAPH_DIR", _DEFAULT_DIR)
     for n in _counter:
         path = os.path.join(base, f"graph_{n:04d}")
         if os.path.exists(os.path.join(path, "graph.jsonl")):

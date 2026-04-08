@@ -1,5 +1,7 @@
 import os
 import sys
+
+print("[✓] Using custom inductor from:", __file__)
 from collections.abc import Callable
 from typing import Any, Literal, Optional, TYPE_CHECKING, Union
 
