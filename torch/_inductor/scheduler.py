@@ -2989,6 +2989,12 @@ class Scheduler:
             }
         )
 
+        # Accumulate post-fusion metrics for evaluation
+        metrics.ir_nodes_post_fusion += len(self.nodes)
+        fused = [n for n in self.nodes if isinstance(n, FusedSchedulerNode)]
+        metrics.num_fused_groups += len(fused)
+        metrics.total_fused_nodes += sum(len(n.snodes) for n in fused)
+
         # Unlike V.graph.removed_buffers, the op recorded here is removed but
         # we still need the buffer (generated in alternative ways)
         self.removed_ops: OrderedSet[str] = OrderedSet()

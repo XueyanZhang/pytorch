@@ -35,6 +35,12 @@ node_runtimes: list[tuple[BaseSchedulerNode, float]] = []
 
 # counters for tracking fusions
 ir_nodes_pre_fusion = 0
+ir_nodes_post_fusion = 0
+num_fused_groups = 0
+total_fused_nodes = 0
+
+# LLM fusion timing
+llm_latency_s = 0.0
 
 # counters for tracking to_dtype inserted
 cpp_to_dtype_count = 0
@@ -66,6 +72,10 @@ def reset() -> None:
     global generated_cpp_vec_kernel_count
     global num_bytes_accessed, nodes_num_elem
     global ir_nodes_pre_fusion
+    global ir_nodes_post_fusion
+    global num_fused_groups
+    global total_fused_nodes
+    global llm_latency_s
     global cpp_to_dtype_count
     global cpp_outer_loop_fused_inner_counts
     global num_comprehensive_padding
@@ -80,6 +90,10 @@ def reset() -> None:
     nodes_num_elem.clear()
     node_runtimes.clear()
     ir_nodes_pre_fusion = 0
+    ir_nodes_post_fusion = 0
+    num_fused_groups = 0
+    total_fused_nodes = 0
+    llm_latency_s = 0.0
     cpp_to_dtype_count = 0
     cpp_outer_loop_fused_inner_counts.clear()
     num_comprehensive_padding = 0

@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import time
 
 reason_log = logging.getLogger("torch._inductor.fusion")
 
@@ -298,10 +299,16 @@ def reason_fusion(nodes: list, scheduler) -> tuple[list[dict], str | None]:
     reason_log.info("graph: %d nodes, %d chars", len(nodes), len(graph_text))
 
     # Step 2: Build prompt and call LLM
+    from torch._inductor import metrics
     from torch._inductor.x_llm_backend import call_llm
 
     messages = STRATEGIES[strategy](graph_text, fmt)
+    t0 = time.perf_counter()
     response_text, _usage = call_llm(SYSTEM_PROMPT, messages)
+    t1 = time.perf_counter()
+    llm_elapsed = t1 - t0
+    metrics.llm_latency_s += llm_elapsed
+    reason_log.info("LLM call took %.2fs", llm_elapsed)
 
     # Step 3: Parse fusion groups
     groups = _parse_fusion_groups(response_text)
