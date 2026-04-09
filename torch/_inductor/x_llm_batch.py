@@ -68,26 +68,34 @@ def dump_graph(nodes, scheduler, dump_dir: str) -> str:
     return graph_path
 
 
-def load_groups(groups_dir: str, nodes=None, scheduler=None) -> tuple[list[dict], float]:
+_EMPTY_LLM_META = {"llm_latency_s": 0.0, "input_tokens": 0, "output_tokens": 0, "strategy": "", "fmt": ""}
+
+
+def load_groups(groups_dir: str, nodes=None, scheduler=None) -> tuple[list[dict], dict]:
     """Phase 3: load pre-computed fusion groups from disk.
 
-    Reads graph_NNNN_groups.jsonl and graph_NNNN_llm_meta.json.
-    If *nodes* and *scheduler* are provided, verifies graph hash matches.
-    Returns (groups, llm_latency_s).
+    *groups_dir* is the method-specific subdir, e.g. .../inference/qwen3-8b/.
+    Groups and llm_meta live here; graph meta.json lives in the parent dir
+    (alongside the shared graph files).
+
+    Returns (groups, llm_meta_info).
     """
     idx = next(_load_counter)
-    prefix = os.path.join(groups_dir, f"graph_{idx:04d}")
+    name = f"graph_{idx:04d}"
+    prefix = os.path.join(groups_dir, name)
 
     groups_path = f"{prefix}_groups.jsonl"
     if not os.path.exists(groups_path):
         log.warning("Phase 3: groups file not found: %s — skipping LLM fusion for this subgraph", groups_path)
-        return [], 0.0
+        return [], dict(_EMPTY_LLM_META)
 
     with open(groups_path, "r", encoding="utf-8") as f:
         groups = [json.loads(line) for line in f if line.strip()]
 
-    # Verify graph hash if possible
-    meta_path = f"{prefix}_meta.json"
+    # Verify graph hash if possible.
+    # meta.json is alongside the graph file (parent of method subdir).
+    graph_prefix = os.path.join(os.path.dirname(groups_dir), name)
+    meta_path = f"{graph_prefix}_meta.json"
     if nodes is not None and scheduler is not None and os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             dump_meta = json.load(f)
@@ -97,18 +105,26 @@ def load_groups(groups_dir: str, nodes=None, scheduler=None) -> tuple[list[dict]
             fmt = dump_meta.get("fmt", "adj")
             current_hash = _graph_hash(_build_graph_text(nodes, scheduler, fmt))
             if current_hash != expected_hash:
+                from torch._inductor import metrics as inductor_metrics
+                inductor_metrics.graph_hash_mismatches += 1
                 log.warning(
                     "Phase 3: graph hash mismatch for %s (expected %s, got %s) — "
                     "subgraph may differ between Phase 1 and Phase 3",
-                    prefix, expected_hash, current_hash,
+                    graph_prefix, expected_hash, current_hash,
                 )
 
-    llm_latency = 0.0
+    llm_meta_info = dict(_EMPTY_LLM_META)
     llm_meta_path = f"{prefix}_llm_meta.json"
     if os.path.exists(llm_meta_path):
         with open(llm_meta_path, "r", encoding="utf-8") as f:
             llm_meta = json.load(f)
-        llm_latency = llm_meta.get("llm_latency_s", 0.0)
+        llm_meta_info["llm_latency_s"] = llm_meta.get("llm_latency_s", 0.0)
+        llm_meta_info["input_tokens"] = llm_meta.get("input_tokens", 0)
+        llm_meta_info["output_tokens"] = llm_meta.get("output_tokens", 0)
+        llm_meta_info["strategy"] = llm_meta.get("strategy", "")
+        llm_meta_info["fmt"] = llm_meta.get("fmt", "")
 
-    log.info("Phase 3 load: %s (%d groups, llm_latency=%.2fs)", groups_path, len(groups), llm_latency)
-    return groups, llm_latency
+    log.info("Phase 3 load: %s (%d groups, llm_latency=%.2fs, tokens=%d/%d)",
+             groups_path, len(groups), llm_meta_info["llm_latency_s"],
+             llm_meta_info["input_tokens"], llm_meta_info["output_tokens"])
+    return groups, llm_meta_info

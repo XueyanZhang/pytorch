@@ -41,6 +41,11 @@ total_fused_nodes = 0
 
 # LLM fusion timing
 llm_latency_s = 0.0
+llm_input_tokens = 0
+llm_output_tokens = 0
+llm_strategy = ""
+llm_fmt = ""
+graph_hash_mismatches = 0
 
 # counters for tracking to_dtype inserted
 cpp_to_dtype_count = 0
@@ -76,6 +81,11 @@ def reset() -> None:
     global num_fused_groups
     global total_fused_nodes
     global llm_latency_s
+    global llm_input_tokens
+    global llm_output_tokens
+    global llm_strategy
+    global llm_fmt
+    global graph_hash_mismatches
     global cpp_to_dtype_count
     global cpp_outer_loop_fused_inner_counts
     global num_comprehensive_padding
@@ -94,6 +104,11 @@ def reset() -> None:
     num_fused_groups = 0
     total_fused_nodes = 0
     llm_latency_s = 0.0
+    llm_input_tokens = 0
+    llm_output_tokens = 0
+    llm_strategy = ""
+    llm_fmt = ""
+    graph_hash_mismatches = 0
     cpp_to_dtype_count = 0
     cpp_outer_loop_fused_inner_counts.clear()
     num_comprehensive_padding = 0

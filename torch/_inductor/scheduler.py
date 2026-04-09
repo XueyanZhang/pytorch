@@ -2876,9 +2876,14 @@ class Scheduler:
             elif _groups_dir:
                 # Phase 3: load pre-computed groups, apply fusion
                 from torch._inductor.x_llm_batch import load_groups
-                groups, llm_latency = load_groups(_groups_dir, self.nodes, self)
-                from torch._inductor import metrics
-                metrics.llm_latency_s += llm_latency
+                groups, llm_meta_info = load_groups(_groups_dir, self.nodes, self)
+                metrics.llm_latency_s += llm_meta_info["llm_latency_s"]
+                metrics.llm_input_tokens += llm_meta_info["input_tokens"]
+                metrics.llm_output_tokens += llm_meta_info["output_tokens"]
+                if llm_meta_info["strategy"] and not metrics.llm_strategy:
+                    metrics.llm_strategy = llm_meta_info["strategy"]
+                if llm_meta_info["fmt"] and not metrics.llm_fmt:
+                    metrics.llm_fmt = llm_meta_info["fmt"]
                 if groups:
                     from torch._inductor.x_llm_fusion import apply_llm_fusion
                     self.nodes = apply_llm_fusion(self, self.nodes, groups)
