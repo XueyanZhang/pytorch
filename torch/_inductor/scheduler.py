@@ -2864,13 +2864,34 @@ class Scheduler:
             dump_json_graph(self.nodes, self)
 
         if os.environ.get("X_LLM_FUSION") == "1":
-            from torch._inductor.x_llm_fusion import apply_llm_fusion
-            from torch._inductor.x_llm_reason_fusion import reason_fusion
-            groups, reason_dir = reason_fusion(self.nodes, self)
-            self.nodes = apply_llm_fusion(self, self.nodes, groups)
-            if reason_dir:
-                from torch._inductor.x_dump_fusion_result import dump_fusion_result
-                dump_fusion_result(self.nodes, self, out_dir=reason_dir)
+            _dump_dir = os.environ.get("X_LLM_FUSION_DUMP_DIR")
+            _groups_dir = os.environ.get("X_LLM_FUSION_GROUPS_DIR")
+
+            if _dump_dir:
+                # Phase 1: dump graph text, then continue compilation
+                # (don't raise — need to process all subgraphs in multi-graph models)
+                from torch._inductor.x_llm_batch import dump_graph
+                dump_graph(self.nodes, self, _dump_dir)
+
+            elif _groups_dir:
+                # Phase 3: load pre-computed groups, apply fusion
+                from torch._inductor.x_llm_batch import load_groups
+                groups, llm_latency = load_groups(_groups_dir, self.nodes, self)
+                from torch._inductor import metrics
+                metrics.llm_latency_s += llm_latency
+                if groups:
+                    from torch._inductor.x_llm_fusion import apply_llm_fusion
+                    self.nodes = apply_llm_fusion(self, self.nodes, groups)
+
+            else:
+                # Online mode: call LLM in real-time (current behavior)
+                from torch._inductor.x_llm_fusion import apply_llm_fusion
+                from torch._inductor.x_llm_reason_fusion import reason_fusion
+                groups, reason_dir = reason_fusion(self.nodes, self)
+                self.nodes = apply_llm_fusion(self, self.nodes, groups)
+                if reason_dir:
+                    from torch._inductor.x_dump_fusion_result import dump_fusion_result
+                    dump_fusion_result(self.nodes, self, out_dir=reason_dir)
         
         if os.environ.get("X_SKIP_FUSE_NODES") != "1":
             self.nodes = self.fuse_nodes(self.nodes)

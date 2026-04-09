@@ -260,7 +260,8 @@ def _dump_reason(graph_text: str, fmt: str, response_text: str, groups: list[dic
             f.write(response_text)
 
         with open(os.path.join(path, "groups.jsonl"), "w", encoding="utf-8") as f:
-            json.dump(groups, f, indent=2)
+            for g in groups:
+                f.write(json.dumps(g) + "\n")
 
         reason_log.info("dumped reason to %s", path)
         return path
