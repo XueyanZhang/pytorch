@@ -17,6 +17,11 @@ from torch.utils._ordered_set import OrderedSet
 
 fusion_log = logging.getLogger("torch._inductor.fusion")
 
+# Fusion result constants (returned by _fuse_group)
+FUSE_OK = "ok"
+FUSE_REJECTED_LEGALITY = "legality"
+FUSE_REJECTED_CYCLE = "cycle"
+
 
 # ═══════════════════════════════════════════════════════════════════════
 #  JSON loading and validation
@@ -292,7 +297,7 @@ def _fuse_group(
 ) -> bool:
     """
     Attempt to fuse all nodes in a single fusion group.
-    Returns True if fully fused, False if partially or not fused.
+    Returns FUSE_OK if fully fused, or FUSE_REJECTED_LEGALITY / FUSE_REJECTED_CYCLE.
     """
     group_indices = group["nodes"]
     reason = group.get("reason", "")
@@ -306,7 +311,7 @@ def _fuse_group(
     first_name = nodes[ordered[0]].get_name()
     accumulator = scheduler.name_to_fused_node.get(first_name, nodes[ordered[0]])
 
-    fully_fused = True
+    result = FUSE_OK
     for idx in ordered[1:]:
         next_name = nodes[idx].get_name()
         next_node = scheduler.name_to_fused_node.get(next_name, nodes[idx])
@@ -326,7 +331,7 @@ def _fuse_group(
                 "[x_llm_fusion] Legality check failed: cannot fuse %s with %s in group %s",
                 accumulator.get_name(), next_node.get_name(), group_indices,
             )
-            fully_fused = False
+            result = FUSE_REJECTED_LEGALITY
             break
 
         # Cycle check
@@ -335,12 +340,12 @@ def _fuse_group(
                 "[x_llm_fusion] Cycle detected: cannot fuse %s with %s in group %s",
                 accumulator.get_name(), next_node.get_name(), group_indices,
             )
-            fully_fused = False
+            result = FUSE_REJECTED_CYCLE
             break
 
         accumulator = _fuse_two_nodes(scheduler, accumulator, next_node, fused_nodes)
 
-    return fully_fused
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -355,9 +360,14 @@ def apply_llm_fusion(scheduler, nodes: list, groups: list[dict]) -> list:
     Args:
         groups: fusion groups to apply.
     """
+    from torch._inductor import metrics
+
     legality_only = os.environ.get("X_LLM_FUSION_LEGALITY_ONLY", "1") != "0"
 
+    num_suggested = len(groups)
     groups = _validate_groups(groups, len(nodes))
+    metrics.llm_groups_suggested += num_suggested
+    metrics.llm_groups_rejected_validation += num_suggested - len(groups)
 
     if not groups:
         fusion_log.debug("===== llm fusion: no valid groups to apply =====")
@@ -386,17 +396,23 @@ def apply_llm_fusion(scheduler, nodes: list, groups: list[dict]) -> list:
             gi + 1, total, group["nodes"], group.get("reason", ""),
         )
         old_count = len(fused_nodes)
-        if _fuse_group(scheduler, group, nodes, fused_nodes, legality_only):
+        fuse_result = _fuse_group(scheduler, group, nodes, fused_nodes, legality_only)
+        if fuse_result == FUSE_OK:
             applied += 1
+            metrics.llm_groups_applied += 1
             fusion_log.debug(
                 "--- llm fusion group (%d/%d): success, %d -> %d nodes ---",
                 gi + 1, total, old_count, len(fused_nodes),
             )
         else:
             skipped += 1
+            if fuse_result == FUSE_REJECTED_LEGALITY:
+                metrics.llm_groups_rejected_legality += 1
+            elif fuse_result == FUSE_REJECTED_CYCLE:
+                metrics.llm_groups_rejected_cycle += 1
             fusion_log.debug(
-                "--- llm fusion group (%d/%d): incomplete, %d -> %d nodes ---",
-                gi + 1, total, old_count, len(fused_nodes),
+                "--- llm fusion group (%d/%d): incomplete (%s), %d -> %d nodes ---",
+                gi + 1, total, fuse_result, old_count, len(fused_nodes),
             )
 
     # Rebuild node list (mirrors fuse_nodes_once lines 4205-4206)

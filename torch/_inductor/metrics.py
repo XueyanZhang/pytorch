@@ -47,6 +47,13 @@ llm_strategy = ""
 llm_fmt = ""
 graph_hash_mismatches = 0
 
+# LLM fusion rejection tracking (PPO/GRPO training signals)
+llm_groups_suggested = 0
+llm_groups_rejected_validation = 0
+llm_groups_rejected_legality = 0
+llm_groups_rejected_cycle = 0
+llm_groups_applied = 0
+
 # counters for tracking to_dtype inserted
 cpp_to_dtype_count = 0
 
@@ -86,6 +93,11 @@ def reset() -> None:
     global llm_strategy
     global llm_fmt
     global graph_hash_mismatches
+    global llm_groups_suggested
+    global llm_groups_rejected_validation
+    global llm_groups_rejected_legality
+    global llm_groups_rejected_cycle
+    global llm_groups_applied
     global cpp_to_dtype_count
     global cpp_outer_loop_fused_inner_counts
     global num_comprehensive_padding
@@ -109,6 +121,11 @@ def reset() -> None:
     llm_strategy = ""
     llm_fmt = ""
     graph_hash_mismatches = 0
+    llm_groups_suggested = 0
+    llm_groups_rejected_validation = 0
+    llm_groups_rejected_legality = 0
+    llm_groups_rejected_cycle = 0
+    llm_groups_applied = 0
     cpp_to_dtype_count = 0
     cpp_outer_loop_fused_inner_counts.clear()
     num_comprehensive_padding = 0

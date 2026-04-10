@@ -305,10 +305,12 @@ def reason_fusion(nodes: list, scheduler) -> tuple[list[dict], str | None]:
 
     messages = STRATEGIES[strategy](graph_text, fmt)
     t0 = time.perf_counter()
-    response_text, _usage = call_llm(SYSTEM_PROMPT, messages)
+    response_text, usage = call_llm(SYSTEM_PROMPT, messages)
     t1 = time.perf_counter()
     llm_elapsed = t1 - t0
     metrics.llm_latency_s += llm_elapsed
+    metrics.llm_input_tokens += usage.get("input_tokens", 0)
+    metrics.llm_output_tokens += usage.get("output_tokens", 0)
     reason_log.info("LLM call took %.2fs", llm_elapsed)
 
     # Step 3: Parse fusion groups
