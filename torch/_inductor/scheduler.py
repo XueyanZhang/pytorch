@@ -2872,6 +2872,7 @@ class Scheduler:
                 # (don't raise — need to process all subgraphs in multi-graph models)
                 from torch._inductor.x_llm_batch import dump_graph
                 dump_graph(self.nodes, self, _dump_dir)
+                log.info("X_LLM_FUSION Phase 1: dumped graph to %s", _dump_dir)
 
             elif _groups_dir:
                 # Phase 3: load pre-computed groups, apply fusion
@@ -2887,6 +2888,7 @@ class Scheduler:
                 if groups:
                     from torch._inductor.x_llm_fusion import apply_llm_fusion
                     self.nodes = apply_llm_fusion(self, self.nodes, groups)
+                log.info("X_LLM_FUSION Phase 3: loaded %d groups from %s", len(groups), _groups_dir)
 
             else:
                 # Online mode: call LLM in real-time (current behavior)
@@ -2894,6 +2896,7 @@ class Scheduler:
                 from torch._inductor.x_llm_reason_fusion import reason_fusion
                 groups, reason_dir = reason_fusion(self.nodes, self)
                 self.nodes = apply_llm_fusion(self, self.nodes, groups)
+                log.info("X_LLM_FUSION Online: reasoned %d groups", len(groups))
                 if reason_dir:
                     from torch._inductor.x_dump_fusion_result import dump_fusion_result
                     dump_fusion_result(self.nodes, self, out_dir=reason_dir)
