@@ -2834,6 +2834,9 @@ class Scheduler:
 
         # pyrefly: ignore [bad-assignment]
         metrics.ir_nodes_pre_fusion += len(self.nodes)
+        metrics.num_bytes_pre_fusion += sum(
+            n.get_read_write_buffers_sizes() for n in self.nodes
+        )
         from torch._inductor.debug import log_ir_post_fusion, log_ir_pre_fusion
 
         log_ir_pre_fusion(self.nodes)
@@ -3024,6 +3027,9 @@ class Scheduler:
         fused = [n for n in self.nodes if isinstance(n, FusedSchedulerNode)]
         metrics.num_fused_groups += len(fused)
         metrics.total_fused_nodes += sum(len(n.snodes) for n in fused)
+        metrics.num_bytes_post_fusion += sum(
+            n.get_read_write_buffers_sizes() for n in self.nodes
+        )
 
         # Unlike V.graph.removed_buffers, the op recorded here is removed but
         # we still need the buffer (generated in alternative ways)

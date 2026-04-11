@@ -39,6 +39,10 @@ ir_nodes_post_fusion = 0
 num_fused_groups = 0
 total_fused_nodes = 0
 
+# DRAM traffic counters (bytes, analytical estimate from scheduler)
+num_bytes_pre_fusion = 0
+num_bytes_post_fusion = 0
+
 # LLM fusion timing
 llm_latency_s = 0.0
 llm_input_tokens = 0
@@ -87,6 +91,8 @@ def reset() -> None:
     global ir_nodes_post_fusion
     global num_fused_groups
     global total_fused_nodes
+    global num_bytes_pre_fusion
+    global num_bytes_post_fusion
     global llm_latency_s
     global llm_input_tokens
     global llm_output_tokens
@@ -115,6 +121,8 @@ def reset() -> None:
     ir_nodes_post_fusion = 0
     num_fused_groups = 0
     total_fused_nodes = 0
+    num_bytes_pre_fusion = 0
+    num_bytes_post_fusion = 0
     llm_latency_s = 0.0
     llm_input_tokens = 0
     llm_output_tokens = 0
