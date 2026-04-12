@@ -63,25 +63,42 @@ FUSION_RULES = """\
    - `ext` (extern): opaque kernels (mm, addmm, sdpa, conv) — these are **fusion barriers**
 
 2. **Fusion legality:**
-   - ext nodes CANNOT be fused with any other node (unless they have a Triton template implementation)
+   - ext nodes CANNOT be fused with any other node — no exceptions
    - Only nodes with compatible shapes can be fused (broadcast from reduced shape to full shape is allowed)
    - Fused nodes must form a connected subgraph in the DAG (no gaps)
    - Fusing nodes must not create a dependency cycle
    - In-place mutation ops can only fuse if read/write indices match exactly
 
-3. **Fusion opportunities:**
-   - pw + pw with same or broadcastable shapes → fuse (horizontal fusion)
-   - pw + pw sharing common input buffers → fuse (horizontal, reduces memory reads)
-   - red + upstream pw → fuse (read-write fusion, the pw feeds directly into the red)
+3. **Fusion opportunities (ranked by priority — apply higher priority first):**
+
+   **Priority 1 — Vertical fusion (producer-consumer):**
+   These eliminate intermediate buffers from global memory, yielding the largest speedup.
+   - red + upstream pw → fuse (the pw feeds directly into the red)
    - red + downstream pw → fuse (the pw consumes the red output)
-   - Consecutive reductions on the same input can sometimes fuse (e.g., var_mean pairs)
+   - pw chain: producer pw feeds consumer pw with no other consumer → fuse
+
+   **Priority 2 — Canonical patterns (always fuse when present):**
+   - **LayerNorm / RMSNorm:** a welford `var_mean` reduction pair (two `red.welford` nodes
+     on the same input) + the downstream normalization `pw` (rsqrt, mul, sub, etc.)
+     These MUST be fused as a group — they are a single logical operation split into nodes.
+   - **Residual + LayerNorm:** if a `pw(add ...)` node computes a residual sum and feeds
+     directly into a LayerNorm pattern above, absorb it into the same group.
+
+   **Priority 3 — Horizontal fusion (independent nodes):**
+   These save memory reads when nodes share inputs, but do NOT eliminate intermediate buffers.
+   - pw + pw with same or broadcastable shapes sharing common inputs → fuse
    - Reductions along different dims of the same tensor → fuse (mix-order reduction)
 
 4. **Fusion barriers:**
-   - ext nodes (without template impl) break fusion chains
+   - ext nodes break fusion chains — each ext node is a hard boundary
    - Shape incompatibility prevents fusion
    - Dependency conflicts (fusing would create a cycle) prevent fusion
-   - Insufficient shared memory savings between nodes
+
+5. **Reading the graph — important:**
+   The adjacency list only shows **producer edges** (`<- [deps]`). There are NO consumer
+   edges. To find which nodes **consume** node X's output, scan all nodes and check whether
+   X appears in their `<- [...]` dependency list. You MUST do this reverse-lookup to
+   identify downstream fusion candidates (e.g., finding the pw that consumes a reduction).
 """
 
 OUTPUT_FORMAT = """\
@@ -94,7 +111,14 @@ Output one fusion group per line as JSONL (one JSON object per line, NO wrapping
 ```
 
 Rules for output:
-- Each node id should appear in AT MOST one group
+- **CRITICAL — no overlap:** Each node id must appear in AT MOST one group.
+  If a node appears in multiple groups, ALL groups containing that node are discarded.
+  BAD example (node 4 appears in two groups — BOTH groups are thrown away):
+  ```
+  {"nodes": [4, 5], "reason": "..."}
+  {"nodes": [4, 20], "reason": "..."}
+  ```
+  Instead, pick the single best group for each node.
 - ext nodes must NOT appear in any group
 - Only include groups with 2+ nodes
 - Keep reasons concise (one line)
@@ -112,6 +136,15 @@ def _strategy_direct(graph_text: str, fmt: str) -> list[dict[str, str]]:
                 "Analyze it and determine which nodes should be fused into the same Triton kernel.\n\n"
                 f"{FUSION_RULES}\n"
                 f"{OUTPUT_FORMAT}\n"
+                "## Analysis steps\n\n"
+                "Follow these steps before producing output:\n\n"
+                "1. **Identify ext barriers:** List all ext nodes. These split the graph into "
+                "segments of pw/red nodes between consecutive ext boundaries.\n"
+                "2. **Analyze each segment:** Within each segment, find fusion opportunities "
+                "following the priority order (vertical first, then canonical patterns, then horizontal). "
+                "For each node, reverse-lookup its consumers from the dependency lists.\n"
+                "3. **Emit groups:** Output the final JSONL fusion groups. Double-check that no "
+                "node id appears in more than one group.\n\n"
                 f"## Graph\n\n```\n{graph_text}\n```\n"
             ),
         }
