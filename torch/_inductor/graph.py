@@ -137,6 +137,12 @@ from torch._inductor.codecache import output_code_log
 log = logging.getLogger(__name__)
 perf_hint_log = torch._logging.getArtifactLogger(__name__, "perf_hints")
 
+
+class FastFusionEvalComplete(Exception):
+    """Raised when X_FAST_FUSION_EVAL=1: fusion done, skip codegen."""
+
+    pass
+
 aten = torch.ops.aten
 
 _post_grad_graph_counter = itertools.count()
@@ -2352,6 +2358,11 @@ class GraphLowering(torch.fx.Interpreter):
             self.init_wrapper_code()
 
             self._update_scheduler()
+
+            if os.environ.get("X_FAST_FUSION_EVAL") == "1":
+                log.info("X_FAST_FUSION_EVAL: fusion complete, skipping codegen")
+                raise FastFusionEvalComplete()
+
             V.debug.draw_orig_fx_graph(self.orig_gm, self.scheduler.nodes)
 
             self.wrapper_code.push_codegened_graph(self)

@@ -59,6 +59,7 @@ from torch._functorch.aot_autograd import (
     SerializableAOTDispatchCompiler,
 )
 from torch._inductor.codecache import code_hash, FxGraphCache, output_code_log
+from torch._inductor.graph import FastFusionEvalComplete
 from torch._inductor.cudagraph_utils import (
     BoxedDeviceIndex,
     format_default_skip_message,
@@ -1534,11 +1535,15 @@ class _InProcessFxCompile(FxCompile):
                                     ],
                                 )
                         else:
-                            compiled_module = graph.compile_to_module()
-                            compiled_fn = compiled_module.call
-                            compiled_fn_runner = getattr(
-                                compiled_module, "runner", None
-                            )
+                            try:
+                                compiled_module = graph.compile_to_module()
+                                compiled_fn = compiled_module.call
+                                compiled_fn_runner = getattr(
+                                    compiled_module, "runner", None
+                                )
+                            except FastFusionEvalComplete:
+                                compiled_fn = gm.forward
+                                compiled_fn_runner = None
 
                     # Dump provenance artifacts for debugging trace
                     inductor_provenance_tracking_node_mappings = None
