@@ -55,11 +55,17 @@ def dump_graph(nodes, scheduler, dump_dir: str) -> str:
     with open(graph_path, "w", encoding="utf-8") as f:
         f.write(graph_text)
 
+    # op_map: maps scheduler node op names (e.g. "op3") to graph node indices
+    # (e.g. 2). Op IDs may skip values for graph inputs (parameters/constants),
+    # so opN != nodeN in general. Needed for fusion_result.json → node ID conversion.
+    op_map = {node.get_name(): i for i, node in enumerate(nodes)}
+
     meta = {
         "num_nodes": len(nodes),
         "fmt": fmt,
         "strategy": os.environ.get("X_LLM_REASON_STRATEGY", "direct"),
         "graph_hash": _graph_hash(graph_text),
+        "op_map": op_map,
     }
     with open(f"{prefix}_meta.json", "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
