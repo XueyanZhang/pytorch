@@ -11,7 +11,8 @@ Env vars:
   X_LLM_REASON_MODEL    — DEPRECATED, use X_LLM_BACKEND instead
   X_LLM_REASON_FORMAT   — graph format: "adj" or "jsonl" (default: adj)
   X_LLM_REASON_DUMP_DIR — dump response & groups for debug (default: off)
-  X_LLM_REASON_STRATEGY — prompt strategy: "direct", "pattern", "pairwise" (default: direct)
+  X_LLM_REASON_STRATEGY — prompt strategy: "direct", "compact", "pattern", "pairwise" (default: direct)
+                            Use "compact" for models fine-tuned on Fusion-R1 SFT (compact style).
 """
 
 import itertools
@@ -176,6 +177,25 @@ def _strategy_pattern(graph_text: str, fmt: str) -> list[dict[str, str]]:
     ]
 
 
+def _strategy_compact(graph_text: str, fmt: str) -> list[dict[str, str]]:
+    """Compact prompt — brief instruction + graph only.
+
+    Mirrors _build_prompt_compact() in xdata/scripts/sft/assemble_sft.py.
+    Use when the model HAS been fine-tuned on Fusion-R1 SFT data and has
+    internalized the fusion rules, output format, and analysis steps.
+    """
+    return [
+        {
+            "role": "user",
+            "content": (
+                "Analyze the following PyTorch Inductor computation graph and determine "
+                "which nodes should be fused into the same Triton kernel.\n\n"
+                f"## Graph\n\n```\n{graph_text}\n```\n"
+            ),
+        }
+    ]
+
+
 def _strategy_pairwise(graph_text: str, fmt: str) -> list[dict[str, str]]:
     """Pairwise feasibility — check adjacent pairs, then group."""
     return [
@@ -198,6 +218,7 @@ def _strategy_pairwise(graph_text: str, fmt: str) -> list[dict[str, str]]:
 
 STRATEGIES = {
     "direct": _strategy_direct,
+    "compact": _strategy_compact,
     "pattern": _strategy_pattern,
     "pairwise": _strategy_pairwise,
 }
