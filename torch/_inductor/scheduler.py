@@ -2761,8 +2761,14 @@ class Scheduler:
     """
 
     def __init__(self, nodes: list[ir.Operation]) -> None:
+        if os.environ.get("X_EVAL_PROFILE") == "1":
+            import time as _time
+            _t = _time.perf_counter()
         with dynamo_timed("Scheduler.__init__"):
             self._init(nodes)
+        if os.environ.get("X_EVAL_PROFILE") == "1":
+            metrics._eval_profile = getattr(metrics, '_eval_profile', {})
+            metrics._eval_profile["4a_scheduler_total"] = _time.perf_counter() - _t
 
     def _init(self, nodes: list[ir.Operation]) -> None:
         super().__init__()
@@ -2826,11 +2832,20 @@ class Scheduler:
             self.name_to_fused_node,
         )
 
+        _profiling = os.environ.get("X_EVAL_PROFILE") == "1"
+        if _profiling:
+            import time as _time
+            _t0 = _time.perf_counter()
+
         self.compute_dependencies()
         self.nodes = self.topological_sort_schedule(self.nodes)
         self.dead_node_elimination()
         self.name_to_fused_node = {n.get_name(): n for n in self.nodes}
         self.compute_ancestors()
+
+        if _profiling:
+            metrics._eval_profile = getattr(metrics, '_eval_profile', {})
+            metrics._eval_profile["5_scheduler_init"] = _time.perf_counter() - _t0
 
         # pyrefly: ignore [bad-assignment]
         metrics.ir_nodes_pre_fusion += len(self.nodes)
@@ -2879,6 +2894,8 @@ class Scheduler:
 
             elif _groups_dir:
                 # Phase 3: load pre-computed groups, apply fusion
+                if _profiling:
+                    _t_fusion = _time.perf_counter()
                 from torch._inductor.x_llm_batch import load_groups
                 groups, llm_meta_info = load_groups(_groups_dir, self.nodes, self)
                 metrics.llm_latency_s += llm_meta_info["llm_latency_s"]
@@ -2890,7 +2907,49 @@ class Scheduler:
                     metrics.llm_fmt = llm_meta_info["fmt"]
                 if groups:
                     from torch._inductor.x_llm_fusion import apply_llm_fusion
-                    self.nodes = apply_llm_fusion(self, self.nodes, groups)
+
+                    # ── Verify fusion replay (X_VERIFY_FUSION_REPLAY=1) ──
+                    if os.environ.get("X_VERIFY_FUSION_REPLAY") == "1":
+                        pre_fusion_nodes = list(self.nodes)
+                        pre_metrics = (metrics.llm_groups_applied,
+                                       metrics.llm_groups_suggested,
+                                       metrics.llm_groups_rejected_validation,
+                                       metrics.llm_groups_rejected_legality,
+                                       metrics.llm_groups_rejected_cycle)
+
+                        # Run 1: normal
+                        self.nodes = apply_llm_fusion(self, pre_fusion_nodes, groups)
+                        run1_post = len(self.nodes)
+                        run1_applied = metrics.llm_groups_applied - pre_metrics[0]
+
+                        # Restore pre-fusion state
+                        self.nodes = list(pre_fusion_nodes)
+                        metrics.llm_groups_applied = pre_metrics[0]
+                        metrics.llm_groups_suggested = pre_metrics[1]
+                        metrics.llm_groups_rejected_validation = pre_metrics[2]
+                        metrics.llm_groups_rejected_legality = pre_metrics[3]
+                        metrics.llm_groups_rejected_cycle = pre_metrics[4]
+
+                        # Run 2: replay
+                        self.nodes = apply_llm_fusion(self, pre_fusion_nodes, groups)
+                        run2_post = len(self.nodes)
+                        run2_applied = metrics.llm_groups_applied - pre_metrics[0]
+
+                        if run1_post == run2_post and run1_applied == run2_applied:
+                            log.warning(
+                                "X_VERIFY_FUSION_REPLAY: PASS  "
+                                "post_fusion=%d applied=%d (both runs identical)",
+                                run1_post, run1_applied)
+                        else:
+                            log.error(
+                                "X_VERIFY_FUSION_REPLAY: FAIL  "
+                                "run1(post=%d, applied=%d) != run2(post=%d, applied=%d)",
+                                run1_post, run1_applied, run2_post, run2_applied)
+                    else:
+                        self.nodes = apply_llm_fusion(self, self.nodes, groups)
+
+                if _profiling:
+                    metrics._eval_profile["6_llm_fusion"] = _time.perf_counter() - _t_fusion
                 log.info("X_LLM_FUSION Phase 3: loaded %d groups from %s", len(groups), _groups_dir)
 
             else:

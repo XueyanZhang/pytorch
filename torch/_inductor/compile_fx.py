@@ -1222,6 +1222,12 @@ class _InProcessFxCompile(FxCompile):
                 )
                 time.sleep(sleep_sec)
 
+            _profiling = os.environ.get("X_EVAL_PROFILE") == "1"
+            if _profiling:
+                import time as _ptime
+                metrics._eval_profile = getattr(metrics, '_eval_profile', {})
+                metrics._eval_profile["_ts_inductor_entry"] = _ptime.perf_counter()
+
             if is_tf32_warning_applicable(gm):
                 _warn_tf32_disabled()
 
@@ -1450,7 +1456,11 @@ class _InProcessFxCompile(FxCompile):
                     V.set_extern_kernel_nodes([]),
                     distributed_autotune.graph_context(),
                 ):
+                    if _profiling:
+                        metrics._eval_profile["_ts_ir_start"] = _ptime.perf_counter()
                     graph.run(*example_inputs)
+                    if _profiling:
+                        metrics._eval_profile["_ts_ir_end"] = _ptime.perf_counter()
                     output_strides: list[Optional[tuple[_StrideExprStr, ...]]] = []
                     if graph.graph_outputs is not None:
                         # We'll put the output strides in the compiled graph so we
